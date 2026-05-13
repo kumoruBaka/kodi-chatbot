@@ -164,6 +164,24 @@
       gap: 6px;
     }
 
+    .session-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      overflow: hidden;
+      flex: 1;
+    }
+
+    .session-date {
+      font-size: 10px;
+      opacity: 0.5;
+      margin-left: 20px;
+    }
+
+    .session-item.active .session-date {
+      opacity: 0.8;
+    }
+
     .session-list::-webkit-scrollbar {
       width: 6px;
     }
@@ -1347,6 +1365,31 @@
       localStorage.removeItem('geminiTokenCount');
     }
 
+    function formatRelativeTime(timestamp) {
+      const now = Date.now();
+      const diff = now - timestamp;
+      if (isNaN(diff)) return 'some time ago';
+      
+      const seconds = Math.floor(diff / 1000);
+      const minutes = Math.floor(seconds / 60);
+      const hours = Math.floor(minutes / 60);
+      const days = Math.floor(hours / 24);
+
+      if (days > 7) return new Date(timestamp).toLocaleDateString();
+      if (days > 0) return `${days}d ago`;
+      if (hours > 0) return `${hours}h ago`;
+      if (minutes > 0) return `${minutes}m ago`;
+      return 'just now';
+    }
+
+    function sortSessions() {
+      sessions.sort((a, b) => {
+        const timeA = a.updatedAt || parseInt(a.id);
+        const timeB = b.updatedAt || parseInt(b.id);
+        return timeB - timeA;
+      });
+    }
+
     // Browser side identification (Keep in browser as requested)
     let userId = localStorage.getItem('kodiUserId');
     if (!userId) {
@@ -1364,16 +1407,20 @@
         if (response.ok) {
           const dbSessions = await response.json();
           if (dbSessions.length > 0) {
-            // Merge logic: prefer DB but keep unsynced local if any
-            sessions = dbSessions;
+            sessions = dbSessions.map(s => {
+              // Parse SQLite timestamp (handle space and UTC)
+              let dbTime = s.updated_at ? Date.parse(s.updated_at.replace(' ', 'T') + 'Z') : parseInt(s.id);
+              return { ...s, updatedAt: dbTime };
+            });
           }
         }
       } catch (err) {
         console.warn('Could not load sessions from DB, using local cache.');
       }
       
-      // Remove temp sessions on load
+      // Clean and sort
       sessions = sessions.filter(s => !s.temp);
+      sortSessions();
       if (sessions.length === 0) {
         createNewSession();
       } else {
@@ -1439,6 +1486,7 @@
 
     function renderSessionList() {
       sessionListEl.innerHTML = '';
+      sortSessions();
       sessions.forEach(session => {
         const item = document.createElement('div');
         item.className = `session-item ${session.id === currentSessionId ? 'active' : ''}`;
@@ -1448,8 +1496,13 @@
           ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle; margin-top: -2px;"><path d="M9 10h.01"/><path d="M15 10h.01"/><path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"/></svg>' 
           : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle; margin-top: -2px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>';
         
+        const timeStr = formatRelativeTime(session.updatedAt || parseInt(session.id));
+
         item.innerHTML = `
-          <div class="session-name" title="${session.name}">${icon}${session.name}</div>
+          <div class="session-info">
+            <div class="session-name" title="${session.name}">${icon}${session.name}</div>
+            <div class="session-date">${timeStr}</div>
+          </div>
           <button class="delete-btn" title="Delete Session" onclick="deleteSession(event, '${session.id}')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
@@ -1716,7 +1769,7 @@
         session.history = session.history.slice(0, editingIndex);
         editingIndex = null;
         messageInput.style.border = '';
-        messageInput.placeholder = modelSelector.value === 'gemini' ? 'Message Gemini...' : 'Message Felo...';
+        messageInput.placeholder = 'Message Kodi...';
         
         // Re-render UI up to the edit point
         const indicator = document.getElementById('typingIndicator');
@@ -1744,8 +1797,10 @@
       // Auto-name session based on first prompt
       if (session.history.length === 1 && !session.temp) {
         session.name = text.substring(0, 20) + (text.length > 20 ? '...' : '');
-        renderSessionList();
       }
+
+      session.updatedAt = Date.now();
+      renderSessionList();
       saveSessions();
 
       // Clear input and files
@@ -1789,15 +1844,14 @@
           }
           saveSessions();
         } else {
-          console.error('[WARNING] API Error:', data.error);
-          appendMessageUI(`**Error:** ${data.error}`, 'bot', true);
+          showToast(data.error || 'Server error', 'error');
           if (data.chatsLeft !== undefined) {
             chatsLeftCount.textContent = data.chatsLeft;
           }
         }
       } catch (error) {
         console.error('[CRITICAL] Fetch Error:', error);
-        appendMessageUI('**Network error.** Please check your connection.', 'bot', true);
+        showToast('Network error. Please check your connection.', 'error');
       } finally {
         setTyping(false);
         sendBtn.innerHTML = originalBtnHTML;

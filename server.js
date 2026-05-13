@@ -32,6 +32,7 @@ async function getUsage(ip) {
     const row = await db.get('SELECT * FROM usage_stats WHERE ip = ?', [ip]);
     if (!row || row.last_reset !== today) {
       await db.run('INSERT INTO usage_stats (ip, count, last_reset) VALUES (?, 0, ?) ON CONFLICT(ip) DO UPDATE SET count = 0, last_reset = ?', [ip, today, today]);
+      console.log(`[DB] Initialized usage for IP: ${ip}`);
       return { count: 0, lastReset: today };
     }
     return { count: row.count, lastReset: row.last_reset };
@@ -128,6 +129,7 @@ app.post("/api/sessions/sync", async (req, res) => {
         [session.id, userId, session.name, JSON.stringify(session.history), session.temp ? 1 : 0]
       );
     }
+    console.log(`[DB] Synced ${sessions.length} sessions for user: ${userId}`);
     res.json({ success: true });
   } catch (err) {
     console.error("[ERROR] Sync failed:", err.message);
@@ -170,7 +172,6 @@ app.post("/api/chat", async (req, res) => {
         }))
       : [];
 
-    const client = getRotatedClient();
     const contents = [...formattedHistory];
     const currentParts = [];
     if (message) currentParts.push({ text: message });
@@ -179,12 +180,31 @@ app.post("/api/chat", async (req, res) => {
     }
     contents.push({ role: 'user', parts: currentParts });
 
-    const result = await client.models.generateContent({
-      model: MODEL_NAME,
-      systemInstruction: SYSTEM_INSTRUCTION,
-      contents: contents,
-      config: { temperature: 0.7, topP: 0.95, topK: 40 }
-    });
+    let result;
+    let attempts = 0;
+    const maxAttempts = apiKeys.length;
+
+    while (attempts < maxAttempts) {
+      try {
+        const client = getRotatedClient();
+        result = await client.models.generateContent({
+          model: MODEL_NAME,
+          systemInstruction: SYSTEM_INSTRUCTION,
+          contents: contents,
+          config: { temperature: 0.7, topP: 0.95, topK: 40 }
+        });
+        break; // Success!
+      } catch (err) {
+        attempts++;
+        const isRetryable = err.status === 429 || err.status === 503;
+        
+        if (isRetryable && attempts < maxAttempts) {
+          console.warn(`[WARNING] Gemini Key ${currentKeyIndex} failed (${err.status}). Retrying with next key (Attempt ${attempts + 1}/${maxAttempts})...`);
+          continue;
+        }
+        throw err; // Out of keys or non-retryable error
+      }
+    }
 
     const reply = result.text;
     const usage = result.usageMetadata;
@@ -196,7 +216,19 @@ app.post("/api/chat", async (req, res) => {
     res.json({ reply, usage, chatsLeft: bypassLimit ? 999 : MAX_CHATS_PER_IP - (ipUsage.count + 1) });
   } catch (error) {
     console.error("[CRITICAL] Error in /api/chat:", error);
-    res.status(500).json({ error: "Internal server error", code: 500 });
+    
+    const status = error.status || 500;
+    let userMessage = "Internal server error";
+    
+    if (status === 503) {
+      userMessage = "Gemini is currently overloaded. Please try again in a few seconds.";
+    } else if (status === 429) {
+      userMessage = "API Rate limit reached. Please wait a moment or add more API keys.";
+    } else if (error.message && error.message.includes("API key")) {
+      userMessage = "Invalid or expired API Key. Please check your .env configuration.";
+    }
+
+    res.status(status).json({ error: userMessage, code: status });
   }
 });
 
