@@ -1,0 +1,33 @@
+# --- Project Dependencies ---
+node_modules/
+package-lock.json
+
+# --- Environment & Configuration ---
+.env
+
+# --- Backups & Legacy ---
+server_backup.cjs
+*.bak
+
+# --- Logs & Performance ---
+logs/
+*.log
+npm-debug.log*
+
+# --- Database & Persistence (SQLite) ---
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+usage.json
+chats.log
+task.md
+git.md
+
+# --- OS & Editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.fleet/
+.hx/
