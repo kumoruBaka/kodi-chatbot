@@ -124,9 +124,10 @@ app.post("/api/sessions/sync", async (req, res) => {
   try {
     for (const session of sessions) {
       if (session.temp) continue;
+      const updatedTimeStr = new Date(session.updatedAt || parseInt(session.id)).toISOString().replace('T', ' ').replace('Z', '');
       await db.run(
-        'INSERT INTO chat_sessions (id, user_id, name, history, is_temp) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, history = excluded.history, is_temp = excluded.is_temp, updated_at = CURRENT_TIMESTAMP',
-        [session.id, userId, session.name, JSON.stringify(session.history), session.temp ? 1 : 0]
+        'INSERT INTO chat_sessions (id, user_id, name, history, is_temp, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, history = excluded.history, is_temp = excluded.is_temp, updated_at = excluded.updated_at',
+        [session.id, userId, session.name, JSON.stringify(session.history), session.temp ? 1 : 0, updatedTimeStr]
       );
     }
     console.log(`[DB] Synced ${sessions.length} sessions for user: ${userId}`);
