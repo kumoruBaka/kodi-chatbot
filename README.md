@@ -31,8 +31,8 @@ Kodi is a production-grade, multimodal AI chatbot powered by the modern Google G
 
 ```bash
 # Clone the repository
-git clone <your-repo-url>
-cd hacktiv8
+git clone https://github.com/kumoruBaka/kodi-chatbot.git
+cd kodi-chatbot
 
 # Install dependencies
 npm install
@@ -43,6 +43,7 @@ npm install
 Create a `.env` file in the root directory (refer to `.env.example`):
 
 ```env
+# Gemini API Key (Support single key or multiple keys separated by semicolon)
 GEMINI_API_KEY=your_key1;your_key2
 PORT=3000
 DEV_MODE=yes
