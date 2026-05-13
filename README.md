@@ -2,7 +2,7 @@
 
 Kodi is a production-grade, multimodal AI chatbot powered by the modern Google Gemini SDK. It features a premium glassmorphic interface, multi-key rotation for high availability, and localized persistent storage using SQLite.
 
-![Kodi Banner](public/favicon.png) <!-- Assuming favicon can act as a mini logo -->
+<img src="public/favicon.png" width="100" alt="Kodi Logo">
 
 ## ✨ Key Features
 
