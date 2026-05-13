@@ -23,10 +23,12 @@ Kodi is a production-grade, multimodal AI chatbot powered by the modern Google G
 ## 🚀 Getting Started
 
 ### 1. Prerequisites
+
 - [Node.js](https://nodejs.org/) (v18 or higher recommended)
 - A Gemini API Key from [Google AI Studio](https://aistudio.google.com/)
 
 ### 2. Installation
+
 ```bash
 # Clone the repository
 git clone <your-repo-url>
@@ -37,7 +39,9 @@ npm install
 ```
 
 ### 3. Configuration
+
 Create a `.env` file in the root directory (refer to `.env.example`):
+
 ```env
 GEMINI_API_KEY=your_key1;your_key2
 PORT=3000
@@ -45,10 +49,12 @@ DEV_MODE=yes
 ```
 
 ### 4. Run the App
+
 ```bash
 # Development mode with auto-reload
 npm run dev
 ```
+
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## 📁 Project Structure
@@ -64,4 +70,4 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-*Made with ❤️ by Nekode Team.*
+_Made with ❤️ by Raditya Budi Santosa_
