@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
+import multer from 'multer';
 import { initDB, getDB } from './data/db.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -147,12 +148,18 @@ app.delete("/api/sessions/:id", async (req, res) => {
   }
 });
 
-app.post("/api/chat", async (req, res) => {
+const upload = multer({ storage: multer.memoryStorage() });
+
+app.post("/api/chat", upload.array('files'), async (req, res) => {
   try {
-    const { message, history, aiModel, files, userId } = req.body;
+    const message = req.body.message || "";
+    const history = req.body.history ? JSON.parse(req.body.history) : [];
+    const userId = req.body.userId;
+    const aiModel = 'gemini';
+    const files = req.files;
     const ip = getIP(req);
 
-    if (!message && (!files || !Array.isArray(files) || files.length === 0)) {
+    if (!message && (!files || files.length === 0)) {
       return res.status(400).json({ error: "Message or files are required", code: 400 });
     }
 
@@ -176,8 +183,8 @@ app.post("/api/chat", async (req, res) => {
     const contents = [...formattedHistory];
     const currentParts = [];
     if (message) currentParts.push({ text: message });
-    if (files && Array.isArray(files) && files.length > 0) {
-      currentParts.push(...files.map(f => ({ inlineData: { data: f.data, mimeType: f.mimeType } })));
+    if (files && files.length > 0) {
+      currentParts.push(...files.map(f => ({ inlineData: { data: f.buffer.toString('base64'), mimeType: f.mimetype } })));
     }
     contents.push({ role: 'user', parts: currentParts });
 

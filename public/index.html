@@ -1239,9 +1239,10 @@
       const reader = new FileReader();
       reader.onload = function(event) {
         selectedFiles.push({
-          data: event.target.result.split(',')[1],
-          mimeType: file.type,
-          name: file.name,
+          fileBlob: file, // Keep the actual file for FormData/Multer
+          data: event.target.result.split(',')[1], // Keep base64 for local preview & history
+          mimeType: file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream'),
+          name: file.name || 'file',
           url: event.target.result
         });
         renderPreviews();
@@ -1297,6 +1298,7 @@
             reader.readAsDataURL(audioBlob);
             reader.onloadend = () => {
               selectedFiles.push({
+                fileBlob: audioBlob, // Added for Multer upload
                 data: reader.result.split(',')[1],
                 mimeType: 'audio/wav',
                 name: 'Voice Note',
@@ -1820,17 +1822,21 @@
 
       setTyping(true);
 
+      const formData = new FormData();
+      formData.append('message', text);
+      formData.append('history', JSON.stringify(currentHistory));
+      formData.append('userId', userId);
+      
+      files.forEach((f) => {
+        if (f.fileBlob) {
+          formData.append('files', f.fileBlob, f.name);
+        }
+      });
+
       try {
         const response = await fetch('/api/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            message: text, 
-            history: currentHistory, 
-            aiModel: 'gemini', 
-            userId: userId,
-            files: files.map(f => ({ data: f.data, mimeType: f.mimeType }))
-          })
+          body: formData
         });
 
         const data = await response.json();
