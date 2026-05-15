@@ -159,19 +159,17 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 app.post("/api/chat", upload.array('files'), async (req, res) => {
   try {
-    const message = req.body.message || "";
-    const history = req.body.history ? JSON.parse(req.body.history) : [];
-    const userId = req.body.userId;
-    const aiModel = 'gemini';
+    const { message = "", history = "[]", userId } = req.body;
     const files = req.files;
     const ip = getIP(req);
+    const aiModel = 'gemini';
 
     if (!message && (!files || files.length === 0)) {
       return res.status(400).json({ error: "Message or files are required", code: 400 });
     }
 
+    // Rate limiting & Logging
     await logActivity(ip, userId, aiModel, message);
-
     const ipUsage = await getUsage(ip);
     const isLocalhost = ip === '::1' || ip === '127.0.0.1' || ip.includes('127.0.0.1');
     const bypassLimit = IS_DEV || isLocalhost;
@@ -180,76 +178,82 @@ app.post("/api/chat", upload.array('files'), async (req, res) => {
       return res.status(429).json({ error: "Daily limit reached.", code: 429 });
     }
 
-    const formattedHistory = Array.isArray(history) 
-      ? history.map(msg => ({
-          role: msg.role === "bot" ? "model" : "user",
-          parts: [{ text: msg.text }],
-        }))
-      : [];
+    const result = await processGeminiChat({ message, history, files });
+    
+    if (!bypassLimit) await incrementUsage(ip);
 
-    const contents = [...formattedHistory];
-    const currentParts = [];
-    if (message) currentParts.push({ text: message });
-    if (files && files.length > 0) {
-      currentParts.push(...files.map(f => ({ inlineData: { data: f.buffer.toString('base64'), mimeType: f.mimetype } })));
-    }
-    contents.push({ role: 'user', parts: currentParts });
-
-    let result;
-    let attempts = 0;
-    const maxAttempts = apiKeys.length;
-
-    while (attempts < maxAttempts) {
-      try {
-        const client = getRotatedClient();
-        result = await client.models.generateContent({
-          model: MODEL_NAME,
-          systemInstruction: SYSTEM_INSTRUCTION,
-          contents: contents,
-          config: { 
-            temperature: config.gemini.temperature, 
-            topP: config.gemini.topP, 
-            topK: config.gemini.topK 
-          }
-        });
-        break; // Success!
-      } catch (err) {
-        attempts++;
-        const isRetryable = err.status === 429 || err.status === 503;
-        
-        if (isRetryable && attempts < maxAttempts) {
-          console.warn(`[WARNING] Gemini Key ${currentKeyIndex} failed (${err.status}). Retrying with next key (Attempt ${attempts + 1}/${maxAttempts})...`);
-          continue;
-        }
-        throw err; // Out of keys or non-retryable error
-      }
-    }
-
-    const reply = result.text;
-    const usage = result.usageMetadata;
-
-    if (!bypassLimit) {
-      await incrementUsage(ip);
-    }
-
-    res.json({ reply, usage, chatsLeft: bypassLimit ? 999 : MAX_CHATS_PER_IP - (ipUsage.count + 1) });
+    res.json({ 
+      reply: result.text, 
+      usage: result.usageMetadata, 
+      chatsLeft: bypassLimit ? 999 : MAX_CHATS_PER_IP - (ipUsage.count + 1) 
+    });
   } catch (error) {
-    console.error("[CRITICAL] Error in /api/chat:", error);
-    
-    const status = error.status || 500;
-    let userMessage = "Internal server error";
-    
-    if (status === 503) {
-      userMessage = "Gemini is currently overloaded. Please try again in a few seconds.";
-    } else if (status === 429) {
-      userMessage = "API Rate limit reached. Please wait a moment or add more API keys.";
-    } else if (error.message && error.message.includes("API key")) {
-      userMessage = "Invalid or expired API Key. Please check your .env configuration.";
-    }
-
-    res.status(status).json({ error: userMessage, code: status });
+    handleChatError(res, error);
   }
 });
+
+/**
+ * Process chat with Gemini API
+ */
+async function processGeminiChat({ message, history, files }) {
+  const parsedHistory = JSON.parse(history);
+  const contents = [
+    ...parsedHistory.map(msg => ({
+      role: msg.role === "bot" ? "model" : "user",
+      parts: [{ text: msg.text }],
+    })),
+    {
+      role: 'user',
+      parts: [
+        ...(message ? [{ text: message }] : []),
+        ...(files || []).map(f => ({ 
+          inlineData: { data: f.buffer.toString('base64'), mimeType: f.mimetype } 
+        }))
+      ]
+    }
+  ];
+
+  let lastError;
+  for (let i = 0; i < apiKeys.length; i++) {
+    try {
+      const client = getRotatedClient();
+      return await client.models.generateContent({
+        model: MODEL_NAME,
+        contents,
+        config: { 
+          systemInstruction: SYSTEM_INSTRUCTION,
+          temperature: config.gemini.temperature, 
+          topP: config.gemini.topP, 
+          topK: config.gemini.topK 
+        }
+      });
+    } catch (err) {
+      lastError = err;
+      if (err.status !== 429 && err.status !== 503) break;
+      console.warn(`[WARNING] Gemini Key rotation triggered due to status ${err.status}`);
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * Consistent error handler for chat route
+ */
+function handleChatError(res, error) {
+  console.error("[CRITICAL] Chat Error:", error);
+  const status = error.status || 500;
+  const messages = {
+    503: "Gemini is overloaded. Try again soon.",
+    429: "Rate limit reached. Please wait.",
+    404: `Model ${MODEL_NAME} not found. Check config.json`,
+    401: "Invalid API Key. Check your .env"
+  };
+  
+  res.status(status).json({ 
+    error: messages[status] || error.message || "Internal server error", 
+    code: status 
+  });
+}
 
 app.listen(port, () => {
   console.log(`[INFO] Server is running on port ${port}`);
