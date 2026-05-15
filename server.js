@@ -5,14 +5,22 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import multer from 'multer';
+import cors from 'cors';
 import { initDB, getDB } from './data/db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
-const port = process.env.PORT || 3000;
+// Load Config
+const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
 
+const app = express();
+const port = process.env.PORT || config.server.port;
+
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || '*',
+  credentials: true
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
@@ -25,7 +33,7 @@ await initDB();
 const db = getDB();
 
 // Usage tracking logic (SQLite)
-const MAX_CHATS_PER_IP = 10;
+const MAX_CHATS_PER_IP = config.server.maxChatsPerIP;
 
 async function getUsage(ip) {
   const today = new Date().toDateString();
@@ -79,10 +87,8 @@ if (apiKeys.length === 0) {
   process.exit(1);
 }
 
-const MODEL_NAME = "gemini-3-flash-preview";
-const SYSTEM_INSTRUCTION = `You are Kodi, a helpful AI assistant made by Nekode.
-You can help with anything — answering questions, writing, coding, brainstorming, and more.
-Be friendly, clear, and concise. Match the user's language (Indonesian or English). Don't be overly formal — talk like a smart, helpful friend.`;
+const MODEL_NAME = config.gemini.modelName;
+const SYSTEM_INSTRUCTION = config.gemini.systemInstruction;
 
 let currentKeyIndex = 0;
 function getRotatedClient() {
@@ -101,7 +107,8 @@ app.get("/api/config", async (req, res) => {
   res.json({ 
     model: MODEL_NAME, 
     maxChats: bypassLimit ? 999 : MAX_CHATS_PER_IP,
-    chatsUsed: bypassLimit ? 0 : usage.count
+    chatsUsed: bypassLimit ? 0 : usage.count,
+    defaultGreeting: config.gemini.defaultGreeting
   });
 });
 
@@ -199,7 +206,11 @@ app.post("/api/chat", upload.array('files'), async (req, res) => {
           model: MODEL_NAME,
           systemInstruction: SYSTEM_INSTRUCTION,
           contents: contents,
-          config: { temperature: 0.7, topP: 0.95, topK: 40 }
+          config: { 
+            temperature: config.gemini.temperature, 
+            topP: config.gemini.topP, 
+            topK: config.gemini.topK 
+          }
         });
         break; // Success!
       } catch (err) {

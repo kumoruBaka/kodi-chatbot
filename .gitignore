@@ -1,5 +1,6 @@
 # --- Project Dependencies ---
 node_modules/
+backups/
 package-lock.json
 
 # --- Environment & Configuration ---
