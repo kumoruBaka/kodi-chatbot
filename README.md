@@ -77,6 +77,10 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 - `server.js` - Main ESM Express server
 - `.env` - Sensitive configuration (Ignored by Git)
 
+## 📊 Stats
+
+![GitHub Clones](https://img.shields.io/badge/Total%20Clones-112-brightgreen?style=flat-square&logo=github)
+
 ## 🤝 Contributors
 
 - **KumoruBaka** - Main Developer & Architect
