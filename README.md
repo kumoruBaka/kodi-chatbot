@@ -1,23 +1,25 @@
 # 🐾 Kodi AI Assistant
 
-Kodi is a production-grade, multimodal AI chatbot powered by the modern Google Gemini SDK. It features a premium glassmorphic interface, multi-key rotation for high availability, and localized persistent storage using SQLite.
+Kodi is a production-grade, multimodal AI chatbot powered by the modern Google Gemini SDK. It features a premium glassmorphic interface, multi-key rotation for high availability, and centralized tuning via `config.json`.
 
 <img src="public/favicon.png" width="100" alt="Kodi Logo">
 
 ## ✨ Key Features
 
-- **🚀 Multimodal Intelligence**: Full support for processing Images, PDFs, and Audio files.
+- **🚀 Multimodal Intelligence**: Robust binary file handling using Multer. Full support for Images, PDFs, and Audio files.
+- **⚙️ Centralized Tuning**: Fine-tune your AI directly in `config.json` — adjust Temperature, TopK, TopP, and System Instructions without touching the code.
 - **🎨 Premium UI/UX**: Stunning glassmorphic design with smooth animations, interactive loaders, and custom toast notifications.
-- **🗄️ Persistent History**: Chat sessions are automatically synced to a local SQLite database (`/data/kodi.db`), solving the browser storage quota limits.
-- **🔐 Usage Control**: Built-in IP-based rate limiting (10 chats/day) with Cloudflare support to prevent abuse.
-- **🔁 API Key Rotation**: Supports multiple Gemini API keys in a round-robin rotation to maximize quota and reliability.
-- **🛠️ Developer Friendly**: Includes an "Unlimited Developer Mode" and auto-reloading during development.
+- **🗄️ Persistent History**: Chat sessions are automatically synced to a local SQLite database (`/data/kodi.db`), solving browser storage quota limits.
+- **🔐 Usage Control**: Built-in IP-based rate limiting with Cloudflare support and configurable CORS security.
+- **🔁 API Key Rotation**: Supports multiple Gemini API keys in a round-robin rotation to maximize reliability.
+- **🛠️ Developer Friendly**: Includes an "Unlimited Developer Mode" and `--watch` reloading for fast development.
 
 ## 🛠️ Tech Stack
 
 - **Backend**: Node.js (ES Modules), Express.js
 - **Database**: SQLite (via `sqlite3` & `sqlite` wrapper)
 - **AI Core**: `@google/genai` (Modern Gemini SDK)
+- **Middleware**: Multer (File Handling), CORS (Security)
 - **Frontend**: Vanilla HTML5, CSS3 (Glassmorphism), JavaScript (ES6+)
 
 ## 🚀 Getting Started
@@ -40,13 +42,22 @@ npm install
 
 ### 3. Configuration
 
-Create a `.env` file in the root directory (refer to `.env.example`):
-
+1. **Environment**: Create a `.env` file (refer to `.env.example`):
 ```env
-# Gemini API Key (Support single key or multiple keys separated by semicolon)
 GEMINI_API_KEY=your_key1;your_key2
 PORT=3000
 DEV_MODE=yes
+CORS_ORIGIN=*
+```
+
+2. **Model Tuning**: Adjust AI behavior in `config.json`:
+```json
+{
+  "gemini": {
+    "temperature": 0.75,
+    "systemInstruction": "You are Kodi, a chill friend..."
+  }
+}
 ```
 
 ### 4. Run the App
@@ -62,6 +73,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 - `/public` - Frontend assets (HTML, CSS, Favicon)
 - `/data` - SQLite database and persistence logic
+- `config.json` - Centralized AI and server settings
 - `server.js` - Main ESM Express server
 - `.env` - Sensitive configuration (Ignored by Git)
 
