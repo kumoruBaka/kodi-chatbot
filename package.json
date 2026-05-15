@@ -15,10 +15,13 @@
   "license": "MIT",
   "dependencies": {
     "@google/genai": "^2.2.0",
-    "cors": "^2.8.6",
+    "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-session": "^1.19.0",
     "multer": "^2.1.1",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0",
     "sqlite": "^5.1.1",
     "sqlite3": "^6.0.1"
   }
