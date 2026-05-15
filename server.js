@@ -6,30 +6,16 @@ import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import multer from 'multer';
 import cors from 'cors';
-import session from 'express-session';
-import passport from 'passport';
-import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { initDB, getDB } from './data/db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Hardcoded Configuration
-const MODEL_NAME = "gemini-3-flash-preview"; 
-const SYSTEM_INSTRUCTION = "You are Kodi, an AI assistant by Nekode. You're helpful, smart, and talk like a chill friend — not a corporate bot. Keep answers clear and concise. Match the user's language (Indonesian or English). If they're casual, be casual. If they need something technical, be precise but still human. Don't over-explain, don't be stiff.";
-const GEN_CONFIG = {
-  temperature: 0.75,
-  topP: 0.92,
-  topK: 40
-};
-const SERVER_CONFIG = {
-  port: 3000,
-  maxChatsPerIP: 10
-};
+// Load Config
+const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
 
 const app = express();
-app.set('trust proxy', true);
-const port = process.env.PORT || SERVER_CONFIG.port;
+const port = process.env.PORT || config.server.port;
 
 app.use(cors({
   origin: process.env.CORS_ORIGIN || '*',
@@ -37,28 +23,6 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
-
-// Security and Session Middlewares
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'kodi_default_secret_key_123',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { maxAge: 30 * 24 * 60 * 60 * 1000 } // 30 days
-}));
-app.use(passport.initialize());
-app.use(passport.session());
-
-const protectRoute = (req, res, next) => {
-  if (req.path === '/login.html') return next();
-  if (req.path === '/' || req.path === '/index.html') {
-    if (!req.isAuthenticated()) {
-      return res.redirect('/login.html');
-    }
-  }
-  next();
-};
-
-app.use(protectRoute);
 app.use(express.static(path.join(__dirname, "public")));
 
 const IS_DEV = process.env.DEV_MODE === "yes";
@@ -68,77 +32,8 @@ if (IS_DEV) console.log("[INFO] Developer Mode is active (Unlimited chats)");
 await initDB();
 const db = getDB();
 
-// Passport Config
-passport.serializeUser((user, done) => done(null, user.id));
-passport.deserializeUser(async (id, done) => {
-  try {
-    const user = await db.get('SELECT * FROM users WHERE id = ?', [id]);
-    done(null, user);
-  } catch (err) {
-    done(err, null);
-  }
-});
-
-passport.use(new GoogleStrategy({
-    clientID: process.env.GOOGLE_CLIENT_ID || 'dummy',
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET || 'dummy',
-    callbackURL: "https://chat.kumoru.my.id/auth/google/callback",
-    proxy: true
-  },
-  async (accessToken, refreshToken, profile, done) => {
-    try {
-      let user = await db.get('SELECT * FROM users WHERE google_id = ?', [profile.id]);
-      if (!user) {
-        const newId = 'u_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
-        const email = profile.emails && profile.emails.length > 0 ? profile.emails[0].value : null;
-        const photo = profile.photos && profile.photos.length > 0 ? profile.photos[0].value : null;
-        
-        await db.run(
-          'INSERT INTO users (id, google_id, email, name, picture) VALUES (?, ?, ?, ?, ?)',
-          [newId, profile.id, email, profile.displayName, photo]
-        );
-        user = { id: newId, google_id: profile.id, email: email, name: profile.displayName, picture: photo };
-      }
-      return done(null, user);
-    } catch (err) {
-      return done(err, null);
-    }
-  }
-));
-
-// Auth Routes
-app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-
-app.get('/auth/google/callback', 
-  passport.authenticate('google', { failureRedirect: '/login.html' }),
-  (req, res) => {
-    res.redirect('/');
-  }
-);
-
-app.get('/api/auth/me', (req, res) => {
-  if (req.isAuthenticated()) {
-    res.json({ authenticated: true, user: req.user });
-  } else {
-    res.json({ authenticated: false });
-  }
-});
-
-app.post('/api/auth/logout', (req, res) => {
-  req.logout((err) => {
-    res.json({ success: true });
-  });
-});
-
-app.get('/logout', (req, res, next) => {
-  req.logout((err) => {
-    if (err) return next(err);
-    res.redirect('/login.html');
-  });
-});
-
 // Usage tracking logic (SQLite)
-const MAX_CHATS_PER_IP = SERVER_CONFIG.maxChatsPerIP;
+const MAX_CHATS_PER_IP = config.server.maxChatsPerIP;
 
 async function getUsage(ip) {
   const today = new Date().toDateString();
@@ -187,6 +82,13 @@ function getIP(req) {
 
 // Initialize Gemini API
 const apiKeys = (process.env.GEMINI_API_KEY || "").split(";").map(k => k.trim()).filter(k => k);
+if (apiKeys.length === 0) {
+  console.error("[CRITICAL] No Gemini API Keys found in .env!");
+  process.exit(1);
+}
+
+const MODEL_NAME = config.gemini.modelName;
+const SYSTEM_INSTRUCTION = config.gemini.systemInstruction;
 
 let currentKeyIndex = 0;
 function getRotatedClient() {
@@ -205,16 +107,9 @@ app.get("/api/config", async (req, res) => {
   res.json({ 
     model: MODEL_NAME, 
     maxChats: bypassLimit ? 999 : MAX_CHATS_PER_IP,
-    chatsUsed: bypassLimit ? 0 : usage.count
+    chatsUsed: bypassLimit ? 0 : usage.count,
+    defaultGreeting: config.gemini.defaultGreeting
   });
-});
-
-app.get("/api/user", (req, res) => {
-  if (req.isAuthenticated()) {
-    res.json(req.user);
-  } else {
-    res.status(401).json({ error: "Not authenticated" });
-  }
 });
 
 app.get("/api/sessions/:userId", async (req, res) => {
@@ -309,10 +204,12 @@ app.post("/api/chat", upload.array('files'), async (req, res) => {
         const client = getRotatedClient();
         result = await client.models.generateContent({
           model: MODEL_NAME,
+          systemInstruction: SYSTEM_INSTRUCTION,
           contents: contents,
-          config: {
-            ...GEN_CONFIG,
-            systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] }
+          config: { 
+            temperature: config.gemini.temperature, 
+            topP: config.gemini.topP, 
+            topK: config.gemini.topK 
           }
         });
         break; // Success!

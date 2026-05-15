@@ -48,18 +48,6 @@ export async function initDB() {
       )
     `);
 
-    // Users Table (for OAuth)
-    await db.exec(`
-      CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        google_id TEXT UNIQUE,
-        email TEXT,
-        name TEXT,
-        picture TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
     console.log("[INFO] SQLite Database initialized at /data/kodi.db");
   } catch (err) {
     console.error("[CRITICAL] SQLite Database initialization failed!");
